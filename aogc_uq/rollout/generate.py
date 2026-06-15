@@ -39,12 +39,12 @@ def flatten_messages(messages: list[dict]) -> list[dict]:
 class ResponseGenerator:
     """Interface: messages -> response text."""
 
-    def generate(self, messages: list[dict]) -> str:  # pragma: no cover
+    def generate(self, messages: list[dict], max_new_tokens: int | None = None) -> str:  # pragma: no cover
         raise NotImplementedError
 
-    def generate_n(self, messages: list[dict], n: int) -> list[str]:
+    def generate_n(self, messages: list[dict], n: int, max_new_tokens: int | None = None) -> list[str]:
         """n samples (for self-consistency / semantic-entropy baselines later)."""
-        return [self.generate(messages) for _ in range(n)]
+        return [self.generate(messages, max_new_tokens=max_new_tokens) for _ in range(n)]
 
 
 class EchoGenerator(ResponseGenerator):
@@ -55,7 +55,7 @@ class EchoGenerator(ResponseGenerator):
         self.response = response
         self.fn = fn
 
-    def generate(self, messages: list[dict]) -> str:
+    def generate(self, messages: list[dict], max_new_tokens: int | None = None) -> str:
         return self.fn(messages) if self.fn else self.response
 
 
@@ -111,13 +111,15 @@ class HFGenerator(ResponseGenerator):
         if self.device is None:
             self.device = "cuda" if has_cuda else "cpu"
 
-    def generate(self, messages: list[dict]) -> str:
-        return self.generate_n(messages, 1)[0]
+    def generate(self, messages: list[dict], max_new_tokens: int | None = None) -> str:
+        return self.generate_n(messages, 1, max_new_tokens=max_new_tokens)[0]
 
-    def generate_n(self, messages: list[dict], n: int = 1) -> list[str]:
+    def generate_n(self, messages: list[dict], n: int = 1,
+                   max_new_tokens: int | None = None) -> list[str]:
         self._ensure_loaded()
         import torch
 
+        mnt = max_new_tokens or self.max_new_tokens
         msgs = flatten_messages(messages)
         # return_dict=True so we always get a BatchEncoding (input_ids + attention_mask).
         # NB: across transformers versions, return_tensors="pt" alone may yield either a
@@ -132,7 +134,7 @@ class HFGenerator(ResponseGenerator):
             gen_inputs["attention_mask"] = enc["attention_mask"].to(self._model.device)
 
         do_sample = self.temperature > 0
-        gen_kwargs = dict(max_new_tokens=self.max_new_tokens, do_sample=do_sample,
+        gen_kwargs = dict(max_new_tokens=mnt, do_sample=do_sample,
                           num_return_sequences=n,
                           pad_token_id=self._tok.eos_token_id)
         if do_sample:
@@ -147,7 +149,7 @@ class HFGenerator(ResponseGenerator):
             raise RuntimeError(
                 f"CUDA OOM at prompt_len={prompt_len}. On a T4: lower max_input_tokens "
                 f"(now {self.max_input_tokens}) and/or max_new_tokens (now "
-                f"{self.max_new_tokens}), or use a smaller model (Qwen2.5-3B-Instruct)."
+                f"{mnt}), or use a smaller model (Qwen2.5-3B-Instruct)."
             ) from e
         finally:
             if torch.cuda.is_available():
