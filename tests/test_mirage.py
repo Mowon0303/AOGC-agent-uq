@@ -76,6 +76,19 @@ def test_attach_response_gui_and_toolcall():
     assert "Answer" in s2.reasoning and "respond" in s2.action
 
 
+def test_parse_freeform_response_populates_reasoning():
+    # SWE-bench-style free-form output has no <think>/<action> tags; the whole
+    # text must become reasoning (else AOGC/FRANQ read nothing -> the AOGC==FRANQ bug)
+    r, a = mirage.parse_agent_response(
+        "The relevant code is on line 1474 in marshmallow/fields.py.\nbash-$ ls")
+    assert "line 1474" in r and r != ""        # reasoning is NOT empty
+    assert a == "bash-$ ls"                      # best-effort last line as action
+
+    # <action> without <think>: pre-action text becomes reasoning
+    r2, a2 = mirage.parse_agent_response("The page shows a 404.\n<action>click('7')</action>")
+    assert "404" in r2 and a2 == "click('7')"
+
+
 def test_load_file_infers_setting_from_path():
     # load_file uses .../dataset_all/<setting>/<env>/file.json; our fixture path
     # doesn't follow that, so setting falls back — just assert it parses to 1 step.

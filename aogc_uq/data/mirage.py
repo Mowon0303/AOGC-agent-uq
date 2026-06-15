@@ -226,18 +226,32 @@ _ACTION_KW = re.compile(r"Action:\s*(.*)", re.S | re.I)
 
 
 def parse_agent_response(text: str) -> tuple[str, str]:
-    """Extract (reasoning, action) from a model response in either format."""
+    """Extract (reasoning, action) from a model response, robust to format.
+
+    Handles <think>/<action>, Thought:/Action:, and free-form output. KEY: for
+    free-form (no structured tags) the WHOLE text becomes ``reasoning`` — the
+    agent's claims about the observation live there, and AOGC/FRANQ read reasoning.
+    Returning empty reasoning (the old bug) made both signals blind.
+    """
     if not text:
         return "", ""
-    th = _THINK.search(text)
-    ac = _ACTION_TAG.search(text)
-    if th or ac:
-        return (th.group(1).strip() if th else "",
-                ac.group(1).strip() if ac else "")
-    th = _THOUGHT_KW.search(text)
-    ac = _ACTION_KW.search(text)
-    return (th.group(1).strip() if th else "",
-            ac.group(1).strip() if ac else text.strip())
+
+    for think_rx, action_rx in ((_THINK, _ACTION_TAG), (_THOUGHT_KW, _ACTION_KW)):
+        th = think_rx.search(text)
+        ac = action_rx.search(text)
+        if th or ac:
+            action = ac.group(1).strip() if ac else ""
+            if th:
+                reasoning = th.group(1).strip()
+            else:  # action found but no explicit thinking -> text before it is the reasoning
+                reasoning = text[: ac.start()].strip()
+            return reasoning, action
+
+    # free-form: the entire output carries the agent's reasoning/claims;
+    # best-effort action = last non-empty line.
+    t = text.strip()
+    last = t.splitlines()[-1].strip() if t else ""
+    return t, last
 
 
 def attach_response(step: Step, response_text: str) -> Step:
