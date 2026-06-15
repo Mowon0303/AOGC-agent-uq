@@ -116,11 +116,18 @@ class HFGenerator(ResponseGenerator):
         import torch
 
         msgs = flatten_messages(messages)
-        inputs = self._tok.apply_chat_template(
+        # return_dict=True so we always get a BatchEncoding (input_ids + attention_mask).
+        # NB: across transformers versions, return_tensors="pt" alone may yield either a
+        # bare tensor or a BatchEncoding; forcing return_dict + indexing input_ids is robust.
+        enc = self._tok.apply_chat_template(
             msgs, add_generation_prompt=True, return_tensors="pt",
-            truncation=True, max_length=self.max_input_tokens,
+            return_dict=True, truncation=True, max_length=self.max_input_tokens,
         )
-        inputs = inputs.to(self._model.device)
+        input_ids = enc["input_ids"].to(self._model.device)
+        gen_inputs = {"input_ids": input_ids}
+        if "attention_mask" in enc:
+            gen_inputs["attention_mask"] = enc["attention_mask"].to(self._model.device)
+
         do_sample = self.temperature > 0
         gen_kwargs = dict(max_new_tokens=self.max_new_tokens, do_sample=do_sample,
                           num_return_sequences=n,
@@ -128,6 +135,6 @@ class HFGenerator(ResponseGenerator):
         if do_sample:
             gen_kwargs["temperature"] = self.temperature
         with torch.no_grad():
-            out = self._model.generate(inputs, **gen_kwargs)
-        prompt_len = inputs.shape[1]
+            out = self._model.generate(**gen_inputs, **gen_kwargs)
+        prompt_len = input_ids.shape[1]
         return [self._tok.decode(o[prompt_len:], skip_special_tokens=True) for o in out]
