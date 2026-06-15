@@ -32,11 +32,12 @@ JUDGE_SYSTEM = (
     "You are a strict evaluator of LLM-agent steps. You are given the goal, the "
     "exact observation the agent saw, and the agent's reasoning and action. Decide "
     "whether the step hallucinated with respect to the observation. Be conservative: "
-    "only mark hallucinated=true if the reasoning/action clearly references or "
-    "assumes something the observation does not support. Reply ONLY with JSON."
+    "only say YES if the reasoning/action clearly references or assumes something the "
+    "observation does not support."
 )
 
 _JSON = re.compile(r"\{.*\}", re.S)
+_YESNO = re.compile(r"\b(YES|NO)\b")
 
 
 def build_judge_messages(step: Step) -> list[dict]:
@@ -49,24 +50,31 @@ def build_judge_messages(step: Step) -> list[dict]:
         f"# Agent reasoning\n{step.reasoning}\n\n"
         f"# Agent action\n{step.action}\n\n"
         f"# Question\n{q}\n\n"
-        'Reply with JSON only: {"hallucinated": true|false, "rationale": "<one sentence>"}'
+        "Answer on the FIRST line with exactly one word: YES (it hallucinated) or "
+        "NO (faithful). Then add one short sentence of justification."
     )
     return [{"role": "system", "content": JUDGE_SYSTEM},
             {"role": "user", "content": user}]
 
 
 def _parse_verdict(text: str) -> dict:
-    m = _JSON.search(text or "")
+    t = (text or "").strip()
+    # 1) leading YES/NO (most reliable for small local judges)
+    m = _YESNO.search(t[:60].upper())
     if m:
+        return {"hallucinated": m.group(1) == "YES", "rationale": t[:300]}
+    # 2) JSON {"hallucinated": ...} (strong API judges may still emit this)
+    mj = _JSON.search(t)
+    if mj:
         try:
-            obj = json.loads(m.group(0))
+            obj = json.loads(mj.group(0))
             return {"hallucinated": bool(obj.get("hallucinated")),
-                    "rationale": str(obj.get("rationale", ""))[:500]}
+                    "rationale": str(obj.get("rationale", ""))[:300]}
         except json.JSONDecodeError:
             pass
-    # fallback: look for a yes/true token
-    t = (text or "").lower()
-    return {"hallucinated": ("true" in t or "yes" in t) and "false" not in t[:40],
+    # 3) last-resort keyword heuristic
+    low = t.lower()
+    return {"hallucinated": ("hallucinat" in low or "unfaithful" in low),
             "rationale": "unparsed; heuristic fallback"}
 
 

@@ -91,6 +91,14 @@ def test_run_rollout_dump_resume_roundtrip(tmp_path=None):
     os.remove(out)
 
 
+def test_judge_verdict_parsing():
+    from aogc_uq.rollout.judge import _parse_verdict
+    assert _parse_verdict("YES. the agent clicked a nonexistent button.")["hallucinated"] is True
+    assert _parse_verdict("NO, the action is faithful to the page.")["hallucinated"] is False
+    assert _parse_verdict('{"hallucinated": true, "rationale": "x"}')["hallucinated"] is True
+    assert _parse_verdict("The agent was unfaithful to the observation.")["hallucinated"] is True
+
+
 def test_run_rollout_without_judge_leaves_label_none():
     out = "/tmp/aogc_rollout_nojudge.jsonl"
     if os.path.exists(out):
