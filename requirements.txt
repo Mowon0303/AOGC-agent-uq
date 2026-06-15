@@ -1,0 +1,16 @@
+# Core (metrics + AOGC signal run on CPU/MPS, no GPU needed)
+numpy
+scipy
+scikit-learn
+pandas
+
+# NLI verifier for AOGC (DeBERTa-v3-MNLI). sentencepiece needed for the v3 tokenizer.
+torch
+transformers
+sentencepiece
+
+# Benchmark loading
+datasets
+
+# Dev
+pytest
