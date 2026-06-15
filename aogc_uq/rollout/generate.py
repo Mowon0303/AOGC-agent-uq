@@ -64,8 +64,11 @@ class HFGenerator(ResponseGenerator):
 
     def __init__(self, model_name: str = "Qwen/Qwen2.5-7B-Instruct",
                  load_in_4bit: bool = True, device: str | None = None,
-                 max_new_tokens: int = 512, temperature: float = 0.0,
-                 max_input_tokens: int = 8192):
+                 max_new_tokens: int = 256, temperature: float = 0.0,
+                 max_input_tokens: int = 4096):
+        # NB on a T4 (16GB): attention memory grows ~quadratically with the prompt
+        # length, and MIRAGE observations (AXTrees) are long. Keep max_input_tokens
+        # modest and prefer Qwen2.5-3B if you still OOM.
         self.model_name = model_name
         self.load_in_4bit = load_in_4bit
         self.device = device
@@ -134,7 +137,18 @@ class HFGenerator(ResponseGenerator):
                           pad_token_id=self._tok.eos_token_id)
         if do_sample:
             gen_kwargs["temperature"] = self.temperature
-        with torch.no_grad():
-            out = self._model.generate(**gen_inputs, **gen_kwargs)
         prompt_len = input_ids.shape[1]
-        return [self._tok.decode(o[prompt_len:], skip_special_tokens=True) for o in out]
+        try:
+            with torch.no_grad():
+                out = self._model.generate(**gen_inputs, **gen_kwargs)
+            return [self._tok.decode(o[prompt_len:], skip_special_tokens=True) for o in out]
+        except torch.cuda.OutOfMemoryError as e:
+            torch.cuda.empty_cache()
+            raise RuntimeError(
+                f"CUDA OOM at prompt_len={prompt_len}. On a T4: lower max_input_tokens "
+                f"(now {self.max_input_tokens}) and/or max_new_tokens (now "
+                f"{self.max_new_tokens}), or use a smaller model (Qwen2.5-3B-Instruct)."
+            ) from e
+        finally:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
