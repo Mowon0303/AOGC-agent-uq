@@ -58,7 +58,8 @@ def run_rollout(
     done = _done_task_ids(out_path) if resume else set()
 
     n = 0
-    with open(out_path, "a") as fout:
+    # resume=True -> append (continue a prior run); resume=False -> truncate (fresh run)
+    with open(out_path, "a" if resume else "w") as fout:
         for traj in trajectories:
             if resume and traj.task_id in done:
                 continue
