@@ -1,5 +1,7 @@
 # AOGC · Agent UQ 的观察-grounding 盲点
 
+> 🤝 **接手/继续这个项目的 agent：先读 [`HANDOFF.md`](HANDOFF.md)**（自包含的状态、瓶颈、下一步、教训），再回来读本文件。
+
 LLM Agent 不确定性量化(UQ)研究项目。目标会场:**AAAI main track**。算力约束:**RTX 3060 单卡(12GB) + API,全程免训练**。
 
 ## 一句话
